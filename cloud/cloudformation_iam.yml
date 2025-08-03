@@ -1,0 +1,330 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'XFinicky Home Network Monitor - IAM User and Permissions'
+
+Parameters:
+  ProjectName:
+    Type: String
+    Default: 'xfinicky'
+    Description: 'Project name for resource naming'
+  
+  MonitoringNamespace:
+    Type: String
+    Default: 'HomeNetwork'
+    Description: 'CloudWatch namespace for metrics'
+  
+  CostAlarmThreshold:
+    Type: Number
+    Default: 10
+    Description: 'Monthly cost threshold in USD for billing alarm'
+  
+  AlertEmail:
+    Type: String
+    Default: ''
+    Description: 'Email address for alerts (optional)'
+    AllowedPattern: '^$|^[^\s@]+@[^\s@]+\.[^\s@]+$'
+  
+  AlertPhoneNumber:
+    Type: String
+    Default: ''
+    Description: 'Phone number for SMS alerts (optional, format: +1234567890)'
+    AllowedPattern: '^$|^\+[1-9]\d{1,14}$'
+
+Resources:
+  # IAM Policy for XFinicky Monitoring
+  XFinickyMonitoringPolicy:
+    Type: 'AWS::IAM::ManagedPolicy'
+    Properties:
+      ManagedPolicyName: !Sub '${ProjectName}-monitoring-policy'
+      Description: 'Permissions for XFinicky home network monitoring'
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          # CloudWatch Metrics - Limited to specific namespace
+          - Sid: 'CloudWatchMetrics'
+            Effect: 'Allow'
+            Action:
+              - 'cloudwatch:PutMetricData'
+              - 'cloudwatch:ListMetrics'
+              - 'cloudwatch:GetMetricStatistics'
+            Resource: '*'
+            Condition:
+              StringEquals:
+                'cloudwatch:namespace': !Ref MonitoringNamespace
+          
+          # CloudWatch Dashboards - Read only for specific dashboards
+          - Sid: 'CloudWatchDashboards'
+            Effect: 'Allow'
+            Action:
+              - 'cloudwatch:GetDashboard'
+              - 'cloudwatch:ListDashboards'
+            Resource: !Sub 'arn:aws:cloudwatch::${AWS::AccountId}:dashboard/${ProjectName}*'
+          
+          # SNS Publishing - Limited to specific topic
+          - Sid: 'SNSPublish'
+            Effect: 'Allow'
+            Action:
+              - 'sns:Publish'
+            Resource: !Ref XFinickyAlertsTopic
+          
+          # Cost Monitoring - Read only
+          - Sid: 'CostMonitoring'
+            Effect: 'Allow'
+            Action:
+              - 'ce:GetCostAndUsage'
+              - 'ce:GetUsageReport'
+              - 'ce:GetRightsizingRecommendation'
+            Resource: '*'
+          
+          # Basic AWS permissions for monitoring
+          - Sid: 'BasicAWSAccess'
+            Effect: 'Allow'
+            Action:
+              - 'sts:GetCallerIdentity'
+            Resource: '*'
+          
+          # Parameter Store access - limited to specific parameter
+          - Sid: 'ParameterStoreAccess'
+            Effect: 'Allow'
+            Action:
+              - 'ssm:GetParameter'
+            Resource: !Sub 'arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/${ProjectName}/credentials/access-key-secret'
+
+  # IAM User for Dell monitoring agent
+  XFinickyMonitorUser:
+    Type: 'AWS::IAM::User'
+    Properties:
+      UserName: !Sub '${ProjectName}-monitor-dell'
+      ManagedPolicyArns:
+        - !Ref XFinickyMonitoringPolicy
+      Tags:
+        - Key: 'Project'
+          Value: !Ref ProjectName
+        - Key: 'Purpose'
+          Value: 'HomeNetworkMonitoring'
+        - Key: 'Environment'
+          Value: 'Production'
+
+  # Access Key for programmatic access
+  XFinickyAccessKey:
+    Type: 'AWS::IAM::AccessKey'
+    Properties:
+      UserName: !Ref XFinickyMonitorUser
+
+  # Store secret key in Parameter Store with encryption (more cost-effective than Secrets Manager)
+  XFinickySecretKeyParameter:
+    Type: 'AWS::SSM::Parameter'
+    Properties:
+      Name: !Sub '/${ProjectName}/credentials/access-key-secret'
+      Description: !Sub 'Secret access key for ${ProjectName} monitoring user'
+      Type: 'String'
+      Value: !GetAtt XFinickyAccessKey.SecretAccessKey
+      Tier: 'Standard'
+      Tags:
+        Project: !Ref ProjectName
+        Purpose: 'HomeNetworkMonitoring'
+
+  # SNS Topic for Alerts
+  XFinickyAlertsTopic:
+    Type: 'AWS::SNS::Topic'
+    Properties:
+      TopicName: !Sub '${ProjectName}-network-alerts'
+      DisplayName: 'XFinicky Home Network Alerts'
+      Tags:
+        - Key: 'Project'
+          Value: !Ref ProjectName
+
+  # Email Subscription (if email provided)
+  EmailSubscription:
+    Type: 'AWS::SNS::Subscription'
+    Condition: HasEmailAlert
+    Properties:
+      Protocol: 'email'
+      TopicArn: !Ref XFinickyAlertsTopic
+      Endpoint: !Ref AlertEmail
+
+  # SMS Subscription (if phone provided)
+  SMSSubscription:
+    Type: 'AWS::SNS::Subscription'
+    Condition: HasSMSAlert
+    Properties:
+      Protocol: 'sms'
+      TopicArn: !Ref XFinickyAlertsTopic
+      Endpoint: !Ref AlertPhoneNumber
+
+  # CloudWatch Dashboard
+  XFinickyDashboard:
+    Type: 'AWS::CloudWatch::Dashboard'
+    Properties:
+      DashboardName: !Sub '${ProjectName}-network-monitoring'
+      DashboardBody: !Sub |
+        {
+          "widgets": [
+            {
+              "type": "metric",
+              "x": 0, "y": 0, "width": 12, "height": 6,
+              "properties": {
+                "metrics": [
+                  ["${MonitoringNamespace}", "network_latency_lan_gateway"],
+                  [".", "network_latency_cloudflare_primary"],
+                  [".", "network_latency_google_primary"]
+                ],
+                "view": "timeSeries",
+                "stacked": false,
+                "region": "${AWS::Region}",
+                "title": "Network Latency (ms)",
+                "period": 300,
+                "yAxis": {"left": {"min": 0, "max": 200}}
+              }
+            },
+            {
+              "type": "metric",
+              "x": 12, "y": 0, "width": 12, "height": 6,
+              "properties": {
+                "metrics": [
+                  ["${MonitoringNamespace}", "network_availability_lan_gateway"],
+                  [".", "network_availability_cloudflare_primary"],
+                  [".", "network_availability_google_primary"]
+                ],
+                "view": "timeSeries",
+                "stacked": false,
+                "region": "${AWS::Region}",
+                "title": "Network Availability",
+                "period": 300,
+                "yAxis": {"left": {"min": 0, "max": 1}}
+              }
+            },
+            {
+              "type": "metric",
+              "x": 0, "y": 6, "width": 12, "height": 6,
+              "properties": {
+                "metrics": [
+                  ["${MonitoringNamespace}", "dns_lookup_time", "domain", "google.com"],
+                  [".", ".", ".", "cloudflare.com"],
+                  [".", ".", ".", "amazon.com"]
+                ],
+                "view": "timeSeries",
+                "stacked": false,
+                "region": "${AWS::Region}",
+                "title": "DNS Lookup Times (ms)",
+                "period": 300
+              }
+            },
+            {
+              "type": "metric",
+              "x": 12, "y": 6, "width": 12, "height": 6,
+              "properties": {
+                "metrics": [
+                  ["${MonitoringNamespace}", "system_cpu_percent"],
+                  [".", "system_memory_percent"],
+                  [".", "system_disk_percent"]
+                ],
+                "view": "timeSeries",
+                "stacked": false,
+                "region": "${AWS::Region}",
+                "title": "System Metrics (%)",
+                "period": 300,
+                "yAxis": {"left": {"min": 0, "max": 100}}
+              }
+            }
+          ]
+        }
+
+  # CloudWatch Alarms
+  HighLatencyAlarm:
+    Type: 'AWS::CloudWatch::Alarm'
+    Properties:
+      AlarmName: !Sub '${ProjectName}-high-latency'
+      AlarmDescription: 'High network latency detected'
+      MetricName: 'network_latency_lan_gateway'
+      Namespace: !Ref MonitoringNamespace
+      Statistic: 'Average'
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 50
+      ComparisonOperator: 'GreaterThanThreshold'
+      AlarmActions:
+        - !Ref XFinickyAlertsTopic
+      TreatMissingData: 'breaching'
+
+  ConnectivityAlarm:
+    Type: 'AWS::CloudWatch::Alarm'
+    Properties:
+      AlarmName: !Sub '${ProjectName}-connectivity-loss'
+      AlarmDescription: 'Network connectivity lost'
+      MetricName: 'network_availability_lan_gateway'
+      Namespace: !Ref MonitoringNamespace
+      Statistic: 'Average'
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 0.5
+      ComparisonOperator: 'LessThanThreshold'
+      AlarmActions:
+        - !Ref XFinickyAlertsTopic
+      TreatMissingData: 'breaching'
+
+  # Cost Monitoring Alarm (only in us-east-1)
+  CostAlarm:
+    Type: 'AWS::CloudWatch::Alarm'
+    Condition: IsUSEast1
+    Properties:
+      AlarmName: !Sub '${ProjectName}-cost-alarm'
+      AlarmDescription: !Sub 'AWS costs exceeded $${CostAlarmThreshold}'
+      MetricName: 'EstimatedCharges'
+      Namespace: 'AWS/Billing'
+      Statistic: 'Maximum'
+      Period: 86400
+      EvaluationPeriods: 1
+      Threshold: !Ref CostAlarmThreshold
+      ComparisonOperator: 'GreaterThanThreshold'
+      Dimensions:
+        - Name: 'Currency'
+          Value: 'USD'
+      AlarmActions:
+        - !Ref XFinickyAlertsTopic
+
+Conditions:
+  HasEmailAlert: !Not [!Equals [!Ref AlertEmail, '']]
+  HasSMSAlert: !Not [!Equals [!Ref AlertPhoneNumber, '']]
+  IsUSEast1: !Equals [!Ref 'AWS::Region', 'us-east-1']
+
+Outputs:
+  IAMUserName:
+    Description: 'IAM User name for XFinicky monitoring'
+    Value: !Ref XFinickyMonitorUser
+    Export:
+      Name: !Sub '${AWS::StackName}-IAMUser'
+
+  AccessKeyId:
+    Description: 'Access Key ID for XFinicky monitoring user'
+    Value: !Ref XFinickyAccessKey
+    Export:
+      Name: !Sub '${AWS::StackName}-AccessKeyId'
+
+  # Output the Parameter Store ARN for the secret access key
+  SecretAccessKey:
+    Description: 'SSM Parameter for Secret Access Key. Retrieve using AWS CLI with: aws ssm get-parameter --name parameter_name --with-decryption'
+    Value: !Ref XFinickySecretKeyParameter
+    Export:
+      Name: !Sub '${AWS::StackName}-SecretKeyParameter'
+
+  SNSTopicArn:
+    Description: 'SNS Topic ARN for alerts'
+    Value: !Ref XFinickyAlertsTopic
+    Export:
+      Name: !Sub '${AWS::StackName}-SNSTopic'
+
+  DashboardURL:
+    Description: 'CloudWatch Dashboard URL'
+    Value: !Sub 'https://${AWS::Region}.console.aws.amazon.com/cloudwatch/home?region=${AWS::Region}#dashboards:name=${ProjectName}-network-monitoring'
+
+  PolicyArn:
+    Description: 'IAM Policy ARN for XFinicky monitoring'
+    Value: !Ref XFinickyMonitoringPolicy
+    Export:
+      Name: !Sub '${AWS::StackName}-PolicyArn'
+
+  MonitoringNamespace:
+    Description: 'CloudWatch namespace for metrics'
+    Value: !Ref MonitoringNamespace
+    Export:
+      Name: !Sub '${AWS::StackName}-Namespace'
