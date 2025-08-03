@@ -70,8 +70,8 @@ class NetworkMonitor:
                 'cloudwatch',
                 region_name=self.config['aws']['region']
             )
-            # Test connection with a simple call
-            self.cloudwatch.list_metrics(MaxRecords=1)
+            # Test connection with a simple call - use correct parameter name
+            response = self.cloudwatch.list_metrics()
             logger.info("AWS CloudWatch client initialized successfully")
             return True
         except Exception as e:
