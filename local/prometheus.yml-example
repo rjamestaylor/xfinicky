@@ -1,0 +1,99 @@
+global:
+  scrape_interval: 60s
+  evaluation_interval: 60s
+
+# Alertmanager configuration (optional)
+# alerting:
+#   alertmanagers:
+#     - static_configs:
+#         - targets:
+#           - alertmanager:9093
+
+# Load rules once and periodically evaluate them
+rule_files:
+  # - "first_rules.yml"
+  # - "second_rules.yml"
+
+scrape_configs:
+  # Prometheus self-monitoring
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  # Blackbox exporter for ping monitoring
+  - job_name: 'blackbox-ping'
+    metrics_path: /probe
+    params:
+      module: [icmp]
+    static_configs:
+      - targets:
+          # Internal network targets
+          - 192.168.1.1          # LAN Gateway/Eero Base
+          - 192.168.1.5        # Mac Studio (update with actual IP)
+          
+          # Internet targets
+          - 1.1.1.1              # Cloudflare Primary
+          - 1.0.0.1              # Cloudflare Secondary  
+          - 8.8.8.8              # Google Primary
+          - 8.8.4.4              # Google Secondary
+          - 9.9.9.9              # Quad9
+          
+          # Work proxy targets (update these!)
+          - google.com           # Replace with actual work endpoints
+          
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox-exporter:9115
+
+  # HTTP/HTTPS monitoring for work endpoints
+  - job_name: 'blackbox-http'
+    metrics_path: /probe
+    params:
+      module: [http_2xx]
+    static_configs:
+      - targets:
+          - https://google.com   # Replace with work portals/sites you can access
+          # - https://portal.yourcompany.com
+          # - https://mail.yourcompany.com
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox-exporter:9115
+
+  # DNS resolution monitoring
+  - job_name: 'blackbox-dns'
+    metrics_path: /probe
+    params:
+      module: [dns_udp]
+    static_configs:
+      - targets:
+          - 8.8.8.8              # Google DNS
+          - 1.1.1.1              # Cloudflare DNS
+          - 192.168.1.1          # Local router DNS
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox-exporter:9115
+
+  # Custom network monitor (our Python script)
+  # This will be available once we implement the metrics endpoint
+  - job_name: 'network-monitor'
+    static_configs:
+      - targets: ['localhost:8000']  # Our Python script metrics endpoint
+    scrape_interval: 60s
+
+  # Mac Studio agent metrics (when implemented)  
+  - job_name: 'mac-agent'
+    static_configs:
+      - targets: ['192.168.1.5:8001']  # Update with Mac Studio IP
+    scrape_interval: 300s  # Every 5 minutes

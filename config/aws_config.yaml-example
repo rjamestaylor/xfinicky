@@ -1,0 +1,19 @@
+# AWS Configuration Template
+# Copy this to aws_config_local.yaml and fill in your details
+
+aws:
+  region: "us-east-1"  # Change to your preferred region
+  access_key_id: "YOUR_ACCESS_KEY_HERE"
+  secret_access_key: "YOUR_SECRET_KEY_HERE"
+  
+  # SNS Topic ARN (will be created by setup script)
+  sns_topic_arn: ""
+  
+  # Optional: SES configuration for email alerts
+  ses:
+    verified_email: "your-verified-email@domain.com"
+    
+  # Cost optimization
+  cloudwatch:
+    detailed_monitoring: false
+    retention_days: 14

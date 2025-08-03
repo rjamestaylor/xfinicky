@@ -1,0 +1,72 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual Environment
+venv/
+env/
+ENV/
+
+# AWS Credentials (never commit these!)
+.aws/
+aws_credentials.json
+*.pem
+
+# Configuration files with secrets
+config/secrets.yaml
+config/aws_config_local.yaml
+config/aws_config.yaml
+local/prometheus.yml
+config/monitoring_config.yaml
+
+# Docker
+.docker/
+
+# Logs
+logs/
+*.log
+
+# Grafana data
+local/grafana/data/
+local/prometheus/data/
+
+# MacOS
+.DS_Store
+
+# Windows
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Temporary files
+*.tmp
+*.temp
+temp/
+
+# Monitoring data
+data/
+metrics/
+
+# Private configs

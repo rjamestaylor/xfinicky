@@ -1,0 +1,107 @@
+# Home Network Monitoring Configuration
+
+# Network targets to monitor
+targets:
+  internal:
+    lan_gateway: "192.168.1.1"
+    wifi_base: "192.168.1.1"  # Usually same as gateway
+    windows11: "192.168.1.8"  # Update with actual IP
+    mac_studio: "192.168.1.5"  # Update with actual IP
+  
+  internet:
+    cloudflare_primary: "1.1.1.1"
+    cloudflare_secondary: "1.0.0.1"
+    google_primary: "8.8.8.8"
+    google_secondary: "8.8.4.4"
+    quad9: "9.9.9.9"
+  
+  work_proxy:
+    # Replace these with actual work-related endpoints you can ping
+    # Examples - update with your company's actual domains:
+    # company_portal: "portal.yourcompany.com"
+    # company_mail: "mail.yourcompany.com"
+    # office_region_dns: "8.8.8.8"  # DNS server near your office
+    google_main: "google.com"  # Placeholder - replace with real targets
+    companny_vpn: "vpn.your-company.com"  # Adobe VPN endpoint
+
+# Monitoring intervals (seconds)
+intervals:
+  ping_check: 60          # Basic ping tests every minute
+  bandwidth_test: 1800    # Bandwidth test every 30 minutes
+  dns_check: 300          # DNS resolution test every 5 minutes
+  mac_agent_report: 300   # Mac Studio reports every 5 minutes
+
+# Thresholds for alerts
+thresholds:
+  latency:
+    lan_warning: 10      # ms - LAN latency warning
+    lan_critical: 25     # ms - LAN latency critical
+    internet_warning: 100 # ms - Internet latency warning
+    internet_critical: 250 # ms - Internet latency critical
+    work_warning: 150    # ms - Work endpoints warning
+    work_critical: 400   # ms - Work endpoints critical
+  
+  packet_loss:
+    warning: 1           # % - Packet loss warning threshold
+    critical: 5          # % - Packet loss critical threshold
+  
+  availability:
+    warning: 95          # % - Availability warning (over 5 minutes)
+    critical: 90         # % - Availability critical
+
+# Local monitoring settings
+local:
+  prometheus_port: 9090
+  grafana_port: 3000
+  blackbox_port: 9115
+  data_retention_days: 30
+  
+  # Mac Studio agent settings
+  mac_agent:
+    enabled: true
+    report_url: "http://192.168.1.5:8080/metrics"  # Update with Dell IP
+    wifi_interface: "en0"  # Default macOS WiFi interface
+
+# AWS CloudWatch settings
+aws:
+  region: "us-west-1"  # Change to your preferred region
+  namespace: "HomeNetwork"
+  metric_resolution: 60  # seconds - standard resolution (cheaper)
+  
+  # Cost optimization settings
+  detailed_monitoring: false  # Set to true only if needed (costs more)
+  retention_days: 14         # Shorter retention = lower costs
+
+# Alerting configuration
+alerts:
+  enabled: true
+  
+  # Alert channels - configure at least one
+  channels:
+    email:
+      enabled: true
+      address: "your.gmail+HomeNetwork@gmail.com"  # Update with your email
+    
+    sms:
+      enabled: true
+      phone_number: "+2025551212"      # Update with your phone number
+    
+    slack:
+      enabled: false
+      webhook_url: "https://hooks.slack.com/services/YOUR/SLACK/WEBHOOK"
+    
+    # Simple webhook for custom integrations
+    webhook:
+      enabled: false
+      url: "https://your-custom-endpoint.com/alert"
+  
+  # Alert timing
+  cooldown_minutes: 15    # Minimum time between duplicate alerts
+  escalation_minutes: 60  # Time before escalating to critical alerts
+
+# Logging
+logging:
+  level: "INFO"  # DEBUG, INFO, WARNING, ERROR
+  file: "logs/network_monitor.log"
+  max_size_mb: 50
+  backup_count: 5

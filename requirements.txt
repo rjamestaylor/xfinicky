@@ -1,0 +1,23 @@
+# Core monitoring dependencies
+boto3>=1.34.0
+ping3>=4.0.4
+psutil>=5.9.8
+requests>=2.31.0
+pyyaml>=6.0.1
+
+# DNS and network utilities
+dnspython>=2.4.2
+netifaces>=0.11.0
+
+# Data processing
+pandas>=2.1.4
+numpy>=1.24.3
+
+# Optional: For advanced network testing
+# scapy>=2.5.0  # Uncomment if you need packet crafting
+# iperf3>=0.1.11  # Uncomment if you want built-in iperf3 support
+
+# Development and testing
+pytest>=7.4.4
+black>=23.12.1
+flake8>=7.0.0
