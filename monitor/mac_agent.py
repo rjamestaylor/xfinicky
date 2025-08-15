@@ -45,12 +45,12 @@ class MacNetworkAgent:
                 'local': {
                     'mac_agent': {
                         'wifi_interface': 'en0',
-                        'report_url': 'http://192.168.1.100:8000/metrics'
+                        'report_url': 'http://192.168.4.255:8000/metrics'
                     }
                 },
                 'targets': {
                     'internal': {
-                        'lan_gateway': '192.168.1.1'
+                        'lan_gateway': '192.168.4.1'
                     }
                 }
             }

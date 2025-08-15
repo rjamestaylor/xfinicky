@@ -87,8 +87,8 @@ fi
 
 # Upgrade pip and install requirements
 echo -e "\n4. Installing Python dependencies..."
-pip install --upgrade pip
-pip install -r requirements.txt
+#pip install --upgrade pip
+pip install --no-cache-dir -r requirements.txt
 
 echo "Python dependencies installed successfully"
 

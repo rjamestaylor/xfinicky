@@ -43,6 +43,7 @@ config/monitoring_config.yaml
 # Logs
 logs/
 *.log
+nohup.out
 
 # Grafana data
 local/grafana/data/
@@ -70,3 +71,4 @@ data/
 metrics/
 
 # Private configs
+config/generated/dell_aws_config.yaml

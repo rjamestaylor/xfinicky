@@ -11,6 +11,8 @@ import boto3
 import ping3
 import json
 import psutil
+import requests
+from urllib.parse import urlparse
 import threading
 from datetime import datetime, timezone
 from typing import Dict, List, Optional, Any
@@ -70,8 +72,10 @@ class NetworkMonitor:
                 'cloudwatch',
                 region_name=self.config['aws']['region']
             )
-            # Test connection with a simple call - use correct parameter name
-            response = self.cloudwatch.list_metrics()
+            # Test connection with a simple call - no additional parameters needed
+            response = self.cloudwatch.list_metrics(
+                # No MaxRecords parameter - this was causing the error
+            )
             logger.info("AWS CloudWatch client initialized successfully")
             return True
         except Exception as e:
@@ -81,6 +85,11 @@ class NetworkMonitor:
     
     def ping_target(self, target: str, timeout: int = 5) -> Optional[float]:
         """Ping a target and return latency in milliseconds"""
+        # Check if this is an HTTP/HTTPS URL
+        if target.startswith('http://') or target.startswith('https://'):
+            return self.http_check(target, timeout)
+        
+        # For non-HTTP targets, use standard ping
         try:
             result = ping3.ping(target, timeout=timeout)
             if result is not None:
@@ -88,6 +97,23 @@ class NetworkMonitor:
             return None
         except Exception as e:
             logger.debug(f"Ping failed for {target}: {e}")
+            return None
+            
+    def http_check(self, url: str, timeout: int = 5) -> Optional[float]:
+        """Check HTTP/HTTPS endpoint and return latency in milliseconds
+        Any HTTP response (even 4xx/5xx) is considered a successful connection"""
+        try:
+            start_time = time.time()
+            # Don't verify SSL certs to avoid false negatives
+            response = requests.get(url, timeout=timeout, verify=False, allow_redirects=False)
+            end_time = time.time()
+            
+            # Any HTTP response means we successfully reached the target
+            latency = (end_time - start_time) * 1000  # Convert to milliseconds
+            logger.debug(f"HTTP check for {url} returned status {response.status_code} with latency {latency:.1f}ms")
+            return latency
+        except Exception as e:
+            logger.debug(f"HTTP check failed for {url}: {e}")
             return None
     
     def dns_lookup_time(self, hostname: str) -> Optional[float]:
@@ -132,6 +158,16 @@ class NetworkMonitor:
             **self.config['targets']['internet'],
             **self.config['targets']['work_proxy']
         }
+        
+        # Convert company targets with domain names to HTTP URLs if they don't have a protocol
+        for target_name, target_address in list(all_targets.items()):
+            # Only process work_proxy targets that aren't already HTTP URLs or IP addresses
+            if (target_name in self.config['targets']['work_proxy'] and
+                not target_address.startswith(('http://', 'https://')) and
+                not all(c.isdigit() or c == '.' for c in target_address)):
+                # Add https:// prefix for domain names
+                all_targets[target_name] = f"https://{target_address}"
+                logger.debug(f"Converted {target_name} to HTTP URL: {all_targets[target_name]}")
         
         for target_name, target_address in all_targets.items():
             latency = self.ping_target(target_address)
@@ -330,24 +366,29 @@ class NetworkMonitor:
         return alert_sent
     
     def _send_email_alert(self, message: str, severity: str):
-        """Send email alert via AWS SES"""
+        """Send email alert via SNS (not SES)"""
         if not self.aws_enabled:
             return
         
         try:
-            ses = boto3.client('ses', region_name=self.config['aws']['region'])
-            email_config = self.config['alerts']['channels']['email']
+            # Use SNS topic instead of SES
+            sns = boto3.client('sns', region_name=self.config['aws']['region'])
             
-            ses.send_email(
-                Source='noreply@yourdomain.com',  # You'll need to verify this in SES
-                Destination={'ToAddresses': [email_config['address']]},
-                Message={
-                    'Subject': {'Data': f'Network Alert - {severity.upper()}'},
-                    'Body': {'Text': {'Data': message}}
-                }
+            # Get SNS topic ARN from config
+            topic_arn = self.config.get('aws', {}).get('sns', {}).get('topic_arn')
+            if not topic_arn:
+                logger.warning("SNS topic ARN not configured - cannot send email alerts")
+                return
+            
+            # Send via SNS (will go to email subscribers automatically)
+            sns.publish(
+                TopicArn=topic_arn,
+                Subject=f'XFinicky Network Alert - {severity.upper()}',
+                Message=message
             )
+            
         except Exception as e:
-            logger.error(f"Email alert failed: {e}")
+            logger.error(f"SNS email alert failed: {e}")
     
     def _send_sms_alert(self, message: str, severity: str):
         """Send SMS alert via AWS SNS"""
