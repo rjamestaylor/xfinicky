@@ -13,6 +13,8 @@ import json
 import psutil
 import requests
 from urllib.parse import urlparse
+# Disable warnings, not advised 
+# urllib3.disable_warnings()
 import threading
 from datetime import datetime, timezone
 from typing import Dict, List, Optional, Any
