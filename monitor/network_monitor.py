@@ -89,12 +89,31 @@ class NetworkMonitor:
         if target.startswith('http://') or target.startswith('https://'):
             return self.http_check(target, timeout)
         
-        # For non-HTTP targets, use standard ping
+        # For non-HTTP targets, use multiple pings and discard the first result
         try:
-            result = ping3.ping(target, timeout=timeout)
-            if result is not None:
-                return result * 1000  # Convert to milliseconds
-            return None
+            # Make multiple pings (4 should be sufficient)
+            ping_times = []
+            for i in range(4):
+                result = ping3.ping(target, timeout=timeout)
+                if result is not None:
+                    ping_times.append(result * 1000)  # Convert to milliseconds
+                    # Brief pause between pings to avoid flooding
+                    if i < 3:  # Don't sleep after the last ping
+                        time.sleep(0.2)
+            
+            if len(ping_times) >= 2:
+                # Discard the first ping to avoid ARP resolution penalty
+                adjusted_times = ping_times[1:]
+                avg_time = sum(adjusted_times) / len(adjusted_times)
+                logger.debug(f"Ping to {target}: first={ping_times[0]:.1f}ms, avg_without_first={avg_time:.1f}ms")
+                return avg_time
+            elif len(ping_times) == 1:
+                # Only got one ping result, use it but note in logs
+                logger.debug(f"Ping to {target}: only one ping result: {ping_times[0]:.1f}ms")
+                return ping_times[0]
+            else:
+                logger.debug(f"Ping to {target}: all pings failed")
+                return None
         except Exception as e:
             logger.debug(f"Ping failed for {target}: {e}")
             return None

@@ -166,27 +166,45 @@ class MacNetworkAgent:
         return interface_stats
     
     def ping_local_targets(self) -> Dict[str, Optional[float]]:
-        """Ping local network targets"""
+        """Ping local network targets with improved accuracy"""
         results = {}
         targets = self.config.get('targets', {}).get('internal', {})
         
         for name, target in targets.items():
             try:
-                cmd = ['ping', '-c', '3', '-W', '3000', target]  # 3 pings, 3 second timeout
+                # Increase to 6 pings to get more reliable data
+                cmd = ['ping', '-c', '6', '-W', '3000', target]  # 6 pings, 3 second timeout
                 result = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
                 
                 if result.returncode == 0:
-                    # Parse ping output to get average time
+                    # Parse individual ping times to handle them separately
                     output = result.stdout
-                    # Look for line like: "round-trip min/avg/max/stddev = 1.234/2.345/3.456/0.789 ms"
-                    match = re.search(r'round-trip min/avg/max/stddev = [\d.]+/([\d.]+)/[\d.]+/[\d.]+ ms', output)
-                    if match:
-                        avg_time = float(match.group(1))
+                    
+                    # Extract individual ping times from lines like "64 bytes from 192.168.4.1: icmp_seq=1 ttl=64 time=4.123 ms"
+                    ping_times = []
+                    for line in output.splitlines():
+                        time_match = re.search(r'time=([\d.]+) ms', line)
+                        if time_match:
+                            ping_times.append(float(time_match.group(1)))
+                    
+                    if len(ping_times) >= 2:  # Need at least 2 pings to discard first one
+                        # Discard the first ping to avoid ARP resolution penalty
+                        ping_times = ping_times[1:]
+                        
+                        # Calculate average of remaining pings
+                        avg_time = sum(ping_times) / len(ping_times)
                         results[name] = avg_time
+                        logger.debug(f"Ping to {name} ({target}): first={ping_times[0]:.1f}ms, avg_without_first={avg_time:.1f}ms")
+                    elif len(ping_times) == 1:
+                        # Only got one ping result, use it but note in logs
+                        results[name] = ping_times[0]
+                        logger.debug(f"Ping to {name} ({target}): only one ping result: {ping_times[0]:.1f}ms")
                     else:
                         results[name] = None
+                        logger.debug(f"Ping to {name} ({target}): no valid ping times extracted")
                 else:
                     results[name] = None
+                    logger.debug(f"Ping to {name} ({target}) failed with return code {result.returncode}")
             
             except Exception as e:
                 logger.debug(f"Ping failed for {name} ({target}): {e}")
